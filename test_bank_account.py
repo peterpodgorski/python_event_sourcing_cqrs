@@ -1,4 +1,6 @@
-from typing import Tuple, Generic, TypeVar
+from abc import ABC
+from collections import deque
+from typing import Tuple, Generic, TypeVar, Deque
 from uuid import UUID, uuid4
 
 import attr
@@ -36,20 +38,26 @@ class AccountCreated(Event):
     deposit: Money = attr.ib()
 
 
-TEvent = TypeVar("TEvent", bound=Event)
-
-
-class Account(Generic[TEvent]):
+class Account:
     def __init__(self, deposit: Money) -> None:
-        pass
+        self._changes: Deque[Event] = deque()
+        self.take(AccountCreated(producer_id=uuid4(), deposit=deposit))
 
     @property
     def id(self) -> UUID:
         return uuid4()
 
     @property
-    def uncommitted_changes(self) -> Tuple[TEvent, ...]:
-        return tuple()
+    def uncommitted_changes(self) -> Tuple[Event, ...]:
+        return tuple(self._changes)
+
+    # other good names: apply_change, trigger, handle, etc...
+    def take(self, event: Event) -> None:
+        self._apply(event)
+        self._changes.append(event)
+
+    def _apply(self, event):
+        pass
 
 
 def test_creating_account_emits_AccountCreated_event():
