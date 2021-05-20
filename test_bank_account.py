@@ -1,3 +1,6 @@
+from typing import Tuple, Generic, TypeVar
+from uuid import UUID, uuid4
+
 import attr
 import pytest
 from money import Money
@@ -21,6 +24,43 @@ class Withdraw(Command):
 class AccountApp:
     def handle(self, command):
         pass
+
+
+@attr.s(frozen=True, kw_only=True)
+class Event:
+    producer_id: UUID = attr.ib()
+
+
+@attr.s(frozen=True, kw_only=True)
+class AccountCreated(Event):
+    deposit: Money = attr.ib()
+
+
+TEvent = TypeVar("TEvent", bound=Event)
+
+
+class Account(Generic[TEvent]):
+    def __init__(self, deposit: Money) -> None:
+        pass
+
+    @property
+    def id(self) -> UUID:
+        return uuid4()
+
+    @property
+    def uncommitted_changes(self) -> Tuple[TEvent, ...]:
+        return tuple()
+
+
+def test_creating_account_emits_AccountCreated_event():
+    account: Account = Account(deposit=Money(100, "PLN"))
+
+    events = account.uncommitted_changes
+
+    assert len(events) == 1
+    assert type(events[0]) == AccountCreated
+    assert events[0].producer_id == account.id
+    assert events[0].deposit == Money(100, "PLN")
 
 
 class Driver:
