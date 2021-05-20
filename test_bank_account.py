@@ -1,6 +1,6 @@
 from abc import ABC
 from collections import deque
-from typing import Tuple, Generic, TypeVar, Deque
+from typing import Tuple, Generic, TypeVar, Deque, cast, overload
 from uuid import UUID, uuid4
 
 import attr
@@ -66,9 +66,10 @@ def test_creating_account_emits_AccountCreated_event():
     events = account.uncommitted_changes
 
     assert len(events) == 1
-    assert type(events[0]) == AccountCreated
-    assert events[0].producer_id == account.id
-    assert events[0].deposit == Money(100, "PLN")
+    event: AccountCreated = cast(AccountCreated, events[0])
+    assert type(event) == AccountCreated
+    assert event.producer_id == account.id
+    assert event.deposit == Money(100, "PLN")
 
 
 class Driver:
