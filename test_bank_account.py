@@ -1,13 +1,38 @@
+import attr
 import pytest
 from money import Money
 
 
-class Driver:
-    def create_account(self, initial_deposit: Money) -> None:
+@attr.s
+class Command:
+    pass
+
+
+@attr.s
+class CreateAccount(Command):
+    with_deposit: Money = attr.ib()
+
+
+@attr.s
+class Withdraw(Command):
+    amount: Money = attr.ib()
+
+
+class AccountApp:
+    def handle(self, command):
         pass
 
+
+class Driver:
+    def create_account(self, initial_deposit: Money) -> None:
+        command = CreateAccount(with_deposit=initial_deposit)
+        app = AccountApp()
+        app.handle(command)
+
     def withdraw(self, amount: Money) -> None:
-        pass
+        command = Withdraw(amount=amount)
+        app = AccountApp()
+        app.handle(command)
 
     def check_balance(self) -> Money:
         return Money(0, "PLN")
