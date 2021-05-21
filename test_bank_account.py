@@ -43,6 +43,10 @@ class UnknownEvent(Exception):
     pass
 
 
+class NotEnoughMoney(Exception):
+    pass
+
+
 class Account:
     def __init__(self, deposit: Money) -> None:
         self._changes: Deque[Event] = deque()
@@ -69,6 +73,9 @@ class Account:
     def _(self, event: AccountCreated) -> None:
         self._id = event.producer_id
 
+    def withdraw(self, amount: Money) -> None:
+        raise NotEnoughMoney()
+
 
 def test_creating_account_emits_AccountCreated_event():
     account: Account = Account(deposit=Money(100, "PLN"))
@@ -80,6 +87,13 @@ def test_creating_account_emits_AccountCreated_event():
     assert type(event) == AccountCreated
     assert event.producer_id == account.id
     assert event.deposit == Money(100, "PLN")
+
+
+def test_withdraw_is_not_possible_with_too_little_money():
+    account: Account = Account(deposit=Money(100, "PLN"))
+
+    with pytest.raises(NotEnoughMoney):
+        account.withdraw(Money(200, "PLN"))
 
 
 class Driver:
