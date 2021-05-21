@@ -1,7 +1,18 @@
 from abc import ABC
-from collections import deque
+from collections import deque, defaultdict
 from functools import singledispatchmethod
-from typing import Tuple, Generic, TypeVar, Deque, cast, overload, Type, Dict
+from typing import (
+    Tuple,
+    Generic,
+    TypeVar,
+    Deque,
+    cast,
+    overload,
+    Type,
+    Dict,
+    Sequence,
+    Generator,
+)
 from uuid import UUID, uuid4
 
 import attr
@@ -133,6 +144,17 @@ def test_withdraw_is_successful_with_enough_money():
 TEntity = TypeVar("TEntity", bound=Entity)
 
 
+class EventStore:
+    def __init__(self) -> None:
+        self._event_streams: Dict[UUID, Deque[Event]] = defaultdict(deque)
+
+    def store(self, producer_id: UUID, events: Sequence[Event]) -> None:
+        self._event_streams[producer_id].extend(events)
+
+    def all_events_for(self, producer_id: UUID) -> Generator[Event, None, None]:
+        return (e for e in self._event_streams[producer_id])
+
+
 class Repository(Generic[TEntity]):
     def __init__(self, entity_class: Type[Entity]):
         self._entity_class = entity_class
@@ -154,6 +176,18 @@ def test_entity_can_be_saved_and_restored():
     retrieved: Account = repo.get(account.id)
 
     assert retrieved.id == account.id
+
+
+def test_a_stream_of_events_can_be_saved_into_EventStore_and_retrieved_from_it():  # noqa
+    account: Account = Account(deposit=Money(100, "PLN"))
+    account.withdraw(amount=Money(10, "PLN"))
+    produced_events = account.uncommitted_changes
+
+    event_store: EventStore = EventStore()
+    event_store.store(account.id, produced_events)
+    retrieved_events = event_store.all_events_for(account.id)
+
+    assert tuple(retrieved_events) == produced_events
 
 
 class Driver:
