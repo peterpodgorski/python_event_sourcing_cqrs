@@ -63,11 +63,22 @@ class NotEnoughMoney(Exception):
     pass
 
 
+TEntity = TypeVar("TEntity", bound="Entity")
+
+
 class Entity(ABC):
     def __init__(self) -> None:
+        self._constructor()
+
+    def _constructor(self) -> None:
+        self._id: UUID
         self._changes: Deque[Event] = deque()
 
-        self._id: UUID
+    @classmethod
+    def construct(cls: Type[TEntity]) -> TEntity:
+        ag = object.__new__(cls)
+        ag._constructor()
+        return ag
 
     @property
     def id(self) -> UUID:
@@ -82,8 +93,11 @@ class Entity(ABC):
         self._apply(event)
         self._changes.append(event)
 
-    def _apply(self, event) -> None:
+    def _apply(self, event: Event) -> None:
         raise UnknownEvent(event)
+
+    def hydrate(self, event: Event) -> None:
+        self._apply(event)
 
 
 class Account(Entity):
@@ -139,9 +153,6 @@ def test_withdraw_is_successful_with_enough_money():
     assert len(events) == 2
     withdraw_event: MoneyWithdrawn = cast(MoneyWithdrawn, events[-1])
     assert withdraw_event.amount == Money(10, "PLN")
-
-
-TEntity = TypeVar("TEntity", bound=Entity)
 
 
 class EventStore:
