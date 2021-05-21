@@ -1,6 +1,6 @@
 from abc import ABC
 from collections import deque, defaultdict
-from functools import singledispatchmethod
+from functools import singledispatchmethod, reduce
 from typing import (
     Tuple,
     Generic,
@@ -156,20 +156,28 @@ class EventStore:
 
 
 class Repository(Generic[TEntity]):
-    def __init__(self, entity_class: Type[Entity]):
+    def __init__(self, entity_class: Type[Entity], event_store: EventStore) -> None:
         self._entity_class = entity_class
-
-        self._storage: Dict[UUID, TEntity] = {}
+        self._event_store = event_store
 
     def save(self, account: TEntity) -> None:
-        self._storage[account.id] = account
+        self._event_store.store(account.id, account.uncommitted_changes)
+
+    def _apply_event(self, ag: TEntity, e: Event) -> TEntity:
+        ag.hydrate(e)
+        return ag
 
     def get(self, entity_id: UUID) -> TEntity:
-        return self._storage[entity_id]
+        changes = self._event_store.all_events_for(entity_id)
+        root: TEntity = self._entity_class.construct()
+
+        final_form: TEntity = reduce(self._apply_event, changes, root)
+
+        return final_form
 
 
 def test_entity_can_be_saved_and_restored():
-    repo: Repository[Account] = Repository(Account)
+    repo: Repository[Account] = Repository(Account, EventStore())
 
     account: Account = Account(deposit=Money(100, "PLN"))
     repo.save(account)
