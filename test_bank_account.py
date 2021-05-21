@@ -35,9 +35,12 @@ class AccountApp:
         pass
 
 
-def test_creating_account_emits_AccountCreated_event():
-    account: Account = Account(deposit=Money(100, "PLN"))
+@pytest.fixture
+def account() -> Account:
+    return Account(deposit=Money(100, "PLN"))
 
+
+def test_creating_account_emits_AccountCreated_event(account: Account):
     events = account.uncommitted_changes
 
     assert len(events) == 1
@@ -47,16 +50,12 @@ def test_creating_account_emits_AccountCreated_event():
     assert event.deposit == Money(100, "PLN")
 
 
-def test_withdraw_is_not_possible_with_too_little_money():
-    account: Account = Account(deposit=Money(100, "PLN"))
-
+def test_withdraw_is_not_possible_with_too_little_money(account: Account):
     with pytest.raises(NotEnoughMoney):
         account.withdraw(Money(200, "PLN"))
 
 
-def test_withdraw_is_successful_with_enough_money():
-    account: Account = Account(deposit=Money(100, "PLN"))
-
+def test_withdraw_is_successful_with_enough_money(account: Account):
     account.withdraw(Money(10, "PLN"))
     events = account.uncommitted_changes
 
@@ -65,18 +64,18 @@ def test_withdraw_is_successful_with_enough_money():
     assert withdraw_event.amount == Money(10, "PLN")
 
 
-def test_entity_can_be_saved_and_restored():
+def test_entity_can_be_saved_and_restored(account: Account):
     repo: Repository[Account] = Repository(Account, EventStore())
-
-    account: Account = Account(deposit=Money(100, "PLN"))
     repo.save(account)
+
     retrieved: Account = repo.get(account.id)
 
     assert retrieved.id == account.id
 
 
-def test_a_stream_of_events_can_be_saved_into_EventStore_and_retrieved_from_it():  # noqa
-    account: Account = Account(deposit=Money(100, "PLN"))
+def test_a_stream_of_events_can_be_saved_into_EventStore_and_retrieved_from_it(
+    account,
+):  # noqa
     account.withdraw(amount=Money(10, "PLN"))
     produced_events = account.uncommitted_changes
 
@@ -85,6 +84,10 @@ def test_a_stream_of_events_can_be_saved_into_EventStore_and_retrieved_from_it()
     retrieved_events = event_store.all_events_for(account.id)
 
     assert tuple(retrieved_events) == produced_events
+
+
+def test_read_model_is_created_from_events():
+    pass
 
 
 class Driver:
