@@ -55,7 +55,7 @@ class NotEnoughMoney(Exception):
 class Account:
     def __init__(self, deposit: Money) -> None:
         self._changes: Deque[Event] = deque()
-        self.take(AccountCreated(producer_id=uuid4(), deposit=deposit))
+        self._take(AccountCreated(producer_id=uuid4(), deposit=deposit))
 
     @property
     def id(self) -> UUID:
@@ -66,7 +66,7 @@ class Account:
         return tuple(self._changes)
 
     # other good names: apply_change, trigger, handle, etc...
-    def take(self, event: Event) -> None:
+    def _take(self, event: Event) -> None:
         self._apply(event)
         self._changes.append(event)
 
@@ -81,7 +81,7 @@ class Account:
 
     def withdraw(self, amount: Money) -> None:
         if self._balance >= amount:
-            self.take(MoneyWithdrawn(producer_id=self._id, amount=amount))
+            self._take(MoneyWithdrawn(producer_id=self._id, amount=amount))
         else:
             raise NotEnoughMoney()
 
