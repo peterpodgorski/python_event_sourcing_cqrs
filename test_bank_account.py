@@ -1,7 +1,7 @@
 from abc import ABC
 from collections import deque
 from functools import singledispatchmethod
-from typing import Tuple, Generic, TypeVar, Deque, cast, overload
+from typing import Tuple, Generic, TypeVar, Deque, cast, overload, Type, Dict
 from uuid import UUID, uuid4
 
 import attr
@@ -52,10 +52,11 @@ class NotEnoughMoney(Exception):
     pass
 
 
-class Account:
-    def __init__(self, deposit: Money) -> None:
+class Entity(ABC):
+    def __init__(self) -> None:
         self._changes: Deque[Event] = deque()
-        self._take(AccountCreated(producer_id=uuid4(), deposit=deposit))
+
+        self._id: UUID
 
     @property
     def id(self) -> UUID:
@@ -70,9 +71,18 @@ class Account:
         self._apply(event)
         self._changes.append(event)
 
-    @singledispatchmethod
     def _apply(self, event) -> None:
         raise UnknownEvent(event)
+
+
+class Account(Entity):
+    def __init__(self, deposit: Money) -> None:
+        super().__init__()
+        self._take(AccountCreated(producer_id=uuid4(), deposit=deposit))
+
+    @singledispatchmethod
+    def _apply(self, event) -> None:
+        super()._apply(event)
 
     @_apply.register
     def _(self, event: AccountCreated) -> None:
@@ -118,6 +128,32 @@ def test_withdraw_is_successful_with_enough_money():
     assert len(events) == 2
     withdraw_event: MoneyWithdrawn = cast(MoneyWithdrawn, events[-1])
     assert withdraw_event.amount == Money(10, "PLN")
+
+
+TEntity = TypeVar("TEntity", bound=Entity)
+
+
+class Repository(Generic[TEntity]):
+    def __init__(self, entity_class: Type[Entity]):
+        self._entity_class = entity_class
+
+        self._storage: Dict[UUID, TEntity] = {}
+
+    def save(self, account: TEntity) -> None:
+        self._storage[account.id] = account
+
+    def get(self, entity_id: UUID) -> TEntity:
+        return self._storage[entity_id]
+
+
+def test_entity_can_be_saved_and_restored():
+    repo: Repository[Account] = Repository(Account)
+
+    account: Account = Account(deposit=Money(100, "PLN"))
+    repo.save(account)
+    retrieved: Account = repo.get(account.id)
+
+    assert retrieved.id == account.id
 
 
 class Driver:
