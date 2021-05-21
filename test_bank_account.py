@@ -1,5 +1,6 @@
 from abc import ABC
 from collections import deque
+from functools import singledispatchmethod
 from typing import Tuple, Generic, TypeVar, Deque, cast, overload
 from uuid import UUID, uuid4
 
@@ -38,6 +39,10 @@ class AccountCreated(Event):
     deposit: Money = attr.ib()
 
 
+class UnknownEvent(Exception):
+    pass
+
+
 class Account:
     def __init__(self, deposit: Money) -> None:
         self._changes: Deque[Event] = deque()
@@ -45,7 +50,7 @@ class Account:
 
     @property
     def id(self) -> UUID:
-        return uuid4()
+        return self._id
 
     @property
     def uncommitted_changes(self) -> Tuple[Event, ...]:
@@ -56,8 +61,13 @@ class Account:
         self._apply(event)
         self._changes.append(event)
 
-    def _apply(self, event):
-        pass
+    @singledispatchmethod
+    def _apply(self, event) -> None:
+        raise UnknownEvent(event)
+
+    @_apply.register
+    def _(self, event: AccountCreated) -> None:
+        self._id = event.producer_id
 
 
 def test_creating_account_emits_AccountCreated_event():
