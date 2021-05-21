@@ -39,6 +39,11 @@ class AccountCreated(Event):
     deposit: Money = attr.ib()
 
 
+@attr.s(frozen=True, kw_only=True)
+class MoneyWithdrawn(Event):
+    amount: Money = attr.ib()
+
+
 class UnknownEvent(Exception):
     pass
 
@@ -72,9 +77,17 @@ class Account:
     @_apply.register
     def _(self, event: AccountCreated) -> None:
         self._id = event.producer_id
+        self._balance = event.deposit
 
     def withdraw(self, amount: Money) -> None:
-        raise NotEnoughMoney()
+        if self._balance >= amount:
+            self.take(MoneyWithdrawn(producer_id=self._id, amount=amount))
+        else:
+            raise NotEnoughMoney()
+
+    @_apply.register
+    def _(self, event: MoneyWithdrawn) -> None:
+        self._balance -= event.amount
 
 
 def test_creating_account_emits_AccountCreated_event():
@@ -94,6 +107,17 @@ def test_withdraw_is_not_possible_with_too_little_money():
 
     with pytest.raises(NotEnoughMoney):
         account.withdraw(Money(200, "PLN"))
+
+
+def test_withdraw_is_successful_with_enough_money():
+    account: Account = Account(deposit=Money(100, "PLN"))
+
+    account.withdraw(Money(10, "PLN"))
+    events = account.uncommitted_changes
+
+    assert len(events) == 2
+    withdraw_event: MoneyWithdrawn = cast(MoneyWithdrawn, events[-1])
+    assert withdraw_event.amount == Money(10, "PLN")
 
 
 class Driver:
