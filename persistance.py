@@ -8,13 +8,18 @@ from domain import Event, TEntity, Entity
 
 class EventStore:
     def __init__(self) -> None:
+        self._global_stream: Deque[Event] = deque()
         self._event_streams: Dict[UUID, Deque[Event]] = defaultdict(deque)
 
     def store(self, producer_id: UUID, events: Sequence[Event]) -> None:
+        self._global_stream.extend(events)
         self._event_streams[producer_id].extend(events)
 
     def all_events_for(self, producer_id: UUID) -> Generator[Event, None, None]:
         return (e for e in self._event_streams[producer_id])
+
+    def all_streams(self) -> Generator[Event, None, None]:
+        return (e for e in self._global_stream)
 
 
 class Repository(Generic[TEntity]):

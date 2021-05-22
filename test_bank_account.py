@@ -1,9 +1,14 @@
+import uuid
+from abc import ABC, abstractmethod
+from collections import defaultdict
 from functools import singledispatchmethod
 from typing import (
     cast,
     Tuple,
     Iterable,
     Dict,
+    Type,
+    List,
 )
 from uuid import UUID
 
@@ -98,7 +103,13 @@ class AccountDTO:
     balance: Money = attr.ib()
 
 
-class BalanceView:
+class ReadModel(ABC):
+    @abstractmethod
+    def handle(self, event) -> None:
+        pass
+
+
+class BalanceView(ReadModel):
     def __init__(self):
         self._storage: Dict[UUID, Money] = {}
 
@@ -126,8 +137,47 @@ def test_read_model_is_built_from_events(account: Account):
     assert account_read_model.account_id == account.id
 
 
-def test_event_handler_builds_read_models_from_event_store():
-    pass
+class Reader:
+    def __init__(self, event_store: EventStore) -> None:
+        self._handlers: Dict[Type[Event], List[ReadModel]] = defaultdict(list)
+        self._event_store: EventStore = event_store
+
+    def register(self, read_model: ReadModel, event: Type[Event]) -> None:
+        self._handlers[event].append(read_model)
+
+    def update_all(self) -> None:
+        for event in self._event_store.all_streams():
+            for handler in self._handlers[type(event)]:
+                handler.handle(event)
+
+
+def test_all_streams_reads_from_all_streams_in_order():
+    event_1 = AccountCreated(producer_id=uuid.uuid4(), deposit=Money("100", "PLN"))
+    event_2 = AccountCreated(producer_id=uuid.uuid4(), deposit=Money("200", "PLN"))
+    event_3 = MoneyWithdrawn(producer_id=event_1.producer_id, amount=Money("10", "PLN"))
+
+    event_store: EventStore = EventStore()
+    event_store.store(event_1.producer_id, [event_1])
+    event_store.store(event_2.producer_id, [event_2])
+    event_store.store(event_3.producer_id, [event_3])
+
+    assert tuple(event_store.all_streams()) == (event_1, event_2, event_3)
+
+
+def test_event_handler_builds_read_models_from_event_store(account: Account):
+    event_store: EventStore = EventStore()
+    repo: Repository[Account] = Repository(Account, event_store)
+    repo.save(account)
+
+    balance_view: BalanceView = BalanceView()
+
+    reader: Reader = Reader(event_store)
+    reader.register(balance_view, AccountCreated)
+    reader.update_all()
+
+    account_read_model: AccountDTO = balance_view.for_account(account.id)
+    assert account_read_model.balance == Money(100, "PLN")
+    assert account_read_model.account_id == account.id
 
 
 class Driver:
