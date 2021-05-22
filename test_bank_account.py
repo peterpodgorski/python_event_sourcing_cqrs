@@ -1,16 +1,8 @@
 import uuid
-from abc import ABC, abstractmethod
-from collections import defaultdict
-from functools import singledispatchmethod
 from typing import (
     cast,
     Tuple,
-    Iterable,
-    Dict,
-    Type,
-    List,
 )
-from uuid import UUID
 
 import attr
 import pytest
@@ -24,6 +16,7 @@ from domain import (
     Event,
 )
 from persistance import EventStore, Repository
+from read_model import AccountDTO, BalanceView, Reader
 
 
 @attr.s
@@ -97,34 +90,6 @@ def test_a_stream_of_events_can_be_saved_into_EventStore_and_retrieved_from_it(
     assert tuple(retrieved_events) == produced_events
 
 
-@attr.s(frozen=True, kw_only=True)
-class AccountDTO:
-    account_id: UUID = attr.ib()
-    balance: Money = attr.ib()
-
-
-class ReadModel(ABC):
-    @abstractmethod
-    def handle(self, event) -> None:
-        pass
-
-
-class BalanceView(ReadModel):
-    def __init__(self):
-        self._storage: Dict[UUID, Money] = {}
-
-    @singledispatchmethod
-    def handle(self, event) -> None:
-        pass
-
-    @handle.register
-    def _(self, event: AccountCreated) -> None:
-        self._storage[event.producer_id] = event.deposit
-
-    def for_account(self, account_id: UUID) -> AccountDTO:
-        return AccountDTO(account_id=account_id, balance=self._storage[account_id])
-
-
 def test_read_model_is_built_from_events(account: Account):
     events: Tuple[Event, ...] = account.uncommitted_changes
     creation_event: AccountCreated = cast(AccountCreated, events[0])
@@ -135,20 +100,6 @@ def test_read_model_is_built_from_events(account: Account):
     account_read_model: AccountDTO = balance_view.for_account(account.id)
     assert account_read_model.balance == Money(100, "PLN")
     assert account_read_model.account_id == account.id
-
-
-class Reader:
-    def __init__(self, event_store: EventStore) -> None:
-        self._handlers: Dict[Type[Event], List[ReadModel]] = defaultdict(list)
-        self._event_store: EventStore = event_store
-
-    def register(self, read_model: ReadModel, event: Type[Event]) -> None:
-        self._handlers[event].append(read_model)
-
-    def update_all(self) -> None:
-        for event in self._event_store.all_streams():
-            for handler in self._handlers[type(event)]:
-                handler.handle(event)
 
 
 def test_all_streams_reads_from_all_streams_in_order():
