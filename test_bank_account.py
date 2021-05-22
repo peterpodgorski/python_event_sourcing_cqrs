@@ -1,6 +1,11 @@
+from functools import singledispatchmethod
 from typing import (
     cast,
+    Tuple,
+    Iterable,
+    Dict,
 )
+from uuid import UUID
 
 import attr
 import pytest
@@ -11,6 +16,7 @@ from domain import (
     MoneyWithdrawn,
     NotEnoughMoney,
     Account,
+    Event,
 )
 from persistance import EventStore, Repository
 
@@ -86,7 +92,41 @@ def test_a_stream_of_events_can_be_saved_into_EventStore_and_retrieved_from_it(
     assert tuple(retrieved_events) == produced_events
 
 
-def test_read_model_is_created_from_events():
+@attr.s(frozen=True, kw_only=True)
+class AccountDTO:
+    account_id: UUID = attr.ib()
+    balance: Money = attr.ib()
+
+
+class BalanceView:
+    def __init__(self):
+        self._storage: Dict[UUID, Money] = {}
+
+    @singledispatchmethod
+    def handle(self, event) -> None:
+        pass
+
+    @handle.register
+    def _(self, event: AccountCreated) -> None:
+        self._storage[event.producer_id] = event.deposit
+
+    def for_account(self, account_id: UUID) -> AccountDTO:
+        return AccountDTO(account_id=account_id, balance=self._storage[account_id])
+
+
+def test_read_model_is_built_from_events(account: Account):
+    events: Tuple[Event, ...] = account.uncommitted_changes
+    creation_event: AccountCreated = cast(AccountCreated, events[0])
+
+    balance_view: BalanceView = BalanceView()
+    balance_view.handle(creation_event)
+
+    account_read_model: AccountDTO = balance_view.for_account(account.id)
+    assert account_read_model.balance == Money(100, "PLN")
+    assert account_read_model.account_id == account.id
+
+
+def test_event_handler_builds_read_models_from_event_store():
     pass
 
 
