@@ -1,8 +1,10 @@
-import uuid
+from abc import ABC
+from functools import singledispatchmethod
 from typing import (
     cast,
     Tuple,
 )
+from uuid import UUID, uuid4
 
 import attr
 import pytest
@@ -31,12 +33,48 @@ class CreateAccount(Command):
 
 @attr.s
 class Withdraw(Command):
+    account_id: UUID = attr.ib()
     amount: Money = attr.ib()
 
 
+class UnknownCommand(Exception):
+    pass
+
+
+@attr.s(frozen=True)
+class Response(ABC):
+    pass
+
+
+@attr.s(frozen=True)
+class CreateAccountResponse(Response):
+    new_account_id: UUID = attr.ib()
+
+
+@attr.s(frozen=True)
+class WithdrawResponse(Response):
+    pass
+
+
 class AccountApp:
-    def handle(self, command):
-        pass
+    def __init__(self, account_repo: Repository) -> None:
+        self._account_repo: Repository[Account] = account_repo
+
+    @singledispatchmethod
+    def handle(self, command) -> Response:
+        raise UnknownCommand(command)
+
+    @handle.register
+    def _(self, command: CreateAccount) -> CreateAccountResponse:
+        account = Account(deposit=command.with_deposit)
+        self._account_repo.save(account)
+        return CreateAccountResponse(new_account_id=account.id)
+
+    @handle.register
+    def _(self, command: Withdraw) -> WithdrawResponse:
+        account: Account = self._account_repo.get(command.account_id)
+        self._account_repo.save(account)
+        return WithdrawResponse()
 
 
 @pytest.fixture
@@ -103,8 +141,8 @@ def test_read_model_is_built_from_events(account: Account):
 
 
 def test_all_streams_reads_from_all_streams_in_order():
-    event_1 = AccountCreated(producer_id=uuid.uuid4(), deposit=Money("100", "PLN"))
-    event_2 = AccountCreated(producer_id=uuid.uuid4(), deposit=Money("200", "PLN"))
+    event_1 = AccountCreated(producer_id=uuid4(), deposit=Money("100", "PLN"))
+    event_2 = AccountCreated(producer_id=uuid4(), deposit=Money("200", "PLN"))
     event_3 = MoneyWithdrawn(producer_id=event_1.producer_id, amount=Money("10", "PLN"))
 
     event_store: EventStore = EventStore()
@@ -132,15 +170,19 @@ def test_event_handler_builds_read_models_from_event_store(account: Account):
 
 
 class Driver:
-    def create_account(self, initial_deposit: Money) -> None:
-        command = CreateAccount(with_deposit=initial_deposit)
-        app = AccountApp()
-        app.handle(command)
+    def __init__(self) -> None:
+        self._app = AccountApp(Repository[Account](Account, EventStore()))
 
-    def withdraw(self, amount: Money) -> None:
-        command = Withdraw(amount=amount)
-        app = AccountApp()
-        app.handle(command)
+    def create_account(self, initial_deposit: Money) -> UUID:
+        command = CreateAccount(with_deposit=initial_deposit)
+        response: CreateAccountResponse = cast(
+            CreateAccountResponse, self._app.handle(command)
+        )
+        return response.new_account_id
+
+    def withdraw(self, from_account: UUID, amount: Money) -> None:
+        command = Withdraw(account_id=from_account, amount=amount)
+        self._app.handle(command)
 
     def check_balance(self) -> Money:
         return Money(0, "PLN")
@@ -148,15 +190,16 @@ class Driver:
 
 class PrivateBankingDSL:
     def __init__(self, driver: Driver) -> None:
+        self._account_id: UUID
         self._driver = driver
 
     def have(self, amount: str, currency: str) -> None:
         money = Money(amount, currency)
-        self._driver.create_account(initial_deposit=money)
+        self._account_id = self._driver.create_account(initial_deposit=money)
 
     def withdraw_money(self, amount: str, currency: str) -> None:
         money = Money(amount, currency)
-        self._driver.withdraw(amount=money)
+        self._driver.withdraw(from_account=self._account_id, amount=money)
 
     def assert_have(self, amount: str, currency: str) -> None:
         balance: Money = self._driver.check_balance()

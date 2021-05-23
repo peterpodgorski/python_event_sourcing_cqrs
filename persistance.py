@@ -1,6 +1,6 @@
 from collections import defaultdict, deque
 from functools import reduce
-from typing import Dict, Deque, Sequence, Generator, Generic, Type
+from typing import Dict, Deque, Sequence, Generator, Generic, Type, cast
 from uuid import UUID
 
 from domain import Event, TEntity, Entity
@@ -36,7 +36,7 @@ class Repository(Generic[TEntity]):
 
     def get(self, entity_id: UUID) -> TEntity:
         changes = self._event_store.all_events_for(entity_id)
-        root: TEntity = self._entity_class.construct()
+        root: TEntity = cast(TEntity, self._entity_class.construct())
 
         final_form: TEntity = reduce(self._apply_event, changes, root)
 
