@@ -1,8 +1,10 @@
 from abc import ABC
+from collections import deque
 from functools import singledispatchmethod
 from typing import (
     cast,
     Tuple,
+    Deque,
 )
 from uuid import UUID, uuid4
 
@@ -18,7 +20,7 @@ from domain import (
     Event,
 )
 from persistance import EventStore, Repository
-from read_model import AccountDTO, BalanceView, Reader
+from read_model import AccountDTO, BalanceView, Reader, ReadModel
 
 
 @attr.s
@@ -169,6 +171,35 @@ def test_event_handler_builds_read_models_from_event_store(account: Account):
     assert account_read_model.account_id == account.id
 
 
+def test_event_reader_remembers_last_update_position():
+    event_1 = AccountCreated(producer_id=uuid4(), deposit=Money("100", "PLN"))
+    event_2 = MoneyWithdrawn(producer_id=event_1.producer_id, amount=Money("10", "PLN"))
+
+    event_store: EventStore = EventStore()
+    event_store.store(event_1.producer_id, [event_1])
+
+    class EventCollector:
+        def __init__(self) -> None:
+            self.handled_events: Deque[Event] = deque()
+
+        def handle(self, event: Event) -> None:
+            self.handled_events.append(event)
+
+    collector = EventCollector()
+
+    reader: Reader = Reader(event_store)
+    reader.register(cast(ReadModel, collector), AccountCreated)
+    reader.register(cast(ReadModel, collector), MoneyWithdrawn)
+
+    reader.update_all()
+
+    event_store.store(event_2.producer_id, [event_2])
+
+    reader.update_all()
+
+    assert collector.handled_events == deque((event_1, event_2))
+
+
 class Driver:
     def __init__(self) -> None:
         event_store = EventStore()
@@ -191,6 +222,10 @@ class Driver:
 
     def withdraw(self, from_account: UUID, amount: Money) -> None:
         command = Withdraw(account_id=from_account, amount=amount)
+
+        # Simulating event store reader in a different container
+        self._reader.update_all()
+
         self._app.handle(command)
 
     def check_balance(self, for_account: UUID) -> Money:

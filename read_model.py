@@ -41,6 +41,7 @@ class BalanceView(ReadModel):
 
 class Reader:
     def __init__(self, event_store: EventStore) -> None:
+        self._last_position: int = 0
         self._handlers: Dict[Type[Event], List[ReadModel]] = defaultdict(list)
         self._event_store: EventStore = event_store
 
@@ -48,6 +49,7 @@ class Reader:
         self._handlers[event].append(read_model)
 
     def update_all(self) -> None:
-        for event in self._event_store.all_streams():
+        for event in self._event_store.all_streams(start_at=self._last_position):
             for handler in self._handlers[type(event)]:
                 handler.handle(event)
+                self._last_position += 1

@@ -1,5 +1,6 @@
 from collections import defaultdict, deque
 from functools import reduce
+from itertools import islice
 from typing import Dict, Deque, Sequence, Generator, Generic, Type, cast
 from uuid import UUID
 
@@ -18,8 +19,8 @@ class EventStore:
     def all_events_for(self, producer_id: UUID) -> Generator[Event, None, None]:
         return (e for e in self._event_streams[producer_id])
 
-    def all_streams(self) -> Generator[Event, None, None]:
-        return (e for e in self._global_stream)
+    def all_streams(self, start_at: int = 0) -> Generator[Event, None, None]:
+        return (e for e in islice(self._global_stream, start_at, None, 1))
 
 
 class Repository(Generic[TEntity]):
