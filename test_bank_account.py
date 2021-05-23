@@ -1,14 +1,11 @@
-from abc import ABC
 from collections import deque
-from functools import singledispatchmethod
 from typing import (
     cast,
     Tuple,
     Deque,
 )
-from uuid import UUID, uuid4
+from uuid import uuid4
 
-import attr
 import pytest
 from money import Money
 
@@ -19,70 +16,9 @@ from domain import (
     Account,
     Event,
 )
+from internal_dsl import PrivateBankingDSL
 from persistance import EventStore, Repository
 from read_model import AccountDTO, BalanceView, Reader, ReadModel
-
-
-@attr.s
-class Command:
-    pass
-
-
-@attr.s
-class CreateAccount(Command):
-    with_deposit: Money = attr.ib()
-
-
-@attr.s
-class Withdraw(Command):
-    account_id: UUID = attr.ib()
-    amount: Money = attr.ib()
-
-
-class UnknownCommand(Exception):
-    pass
-
-
-@attr.s(frozen=True)
-class Response(ABC):
-    pass
-
-
-@attr.s(frozen=True)
-class CreateAccountResponse(Response):
-    new_account_id: UUID = attr.ib()
-
-
-@attr.s(frozen=True)
-class WithdrawResponse(Response):
-    pass
-
-
-class AccountApp:
-    def __init__(self, account_repo: Repository) -> None:
-        self._account_repo: Repository[Account] = account_repo
-
-    @singledispatchmethod
-    def handle(self, command) -> Response:
-        raise UnknownCommand(command)
-
-    @handle.register
-    def _(self, command: CreateAccount) -> CreateAccountResponse:
-        account = Account(deposit=command.with_deposit)
-        self._account_repo.save(account)
-        return CreateAccountResponse(new_account_id=account.id)
-
-    @handle.register
-    def _(self, command: Withdraw) -> WithdrawResponse:
-        account: Account = self._account_repo.get(command.account_id)
-        account.withdraw(command.amount)
-        self._account_repo.save(account)
-        return WithdrawResponse()
-
-
-@pytest.fixture
-def account() -> Account:
-    return Account(deposit=Money(100, "PLN"))
 
 
 def test_creating_account_emits_AccountCreated_event(account: Account):
@@ -227,62 +163,6 @@ def test_event_reader_remembers_last_update_position_with_multiple_handers():
 
     assert collector_1.handled_events == deque((event_1, event_2))
     assert collector_2.handled_events == deque((event_1, event_2))
-
-
-class Driver:
-    def __init__(self) -> None:
-        event_store = EventStore()
-        self._app = AccountApp(Repository[Account](Account, event_store))
-
-        self._balance_view: BalanceView = BalanceView()
-
-        self._reader = Reader(event_store=event_store)
-        self._reader.register(self._balance_view, AccountCreated, MoneyWithdrawn)
-
-    def create_account(self, initial_deposit: Money) -> UUID:
-        command = CreateAccount(with_deposit=initial_deposit)
-        response: CreateAccountResponse = cast(
-            CreateAccountResponse, self._app.handle(command)
-        )
-
-        # Simulating event store reader in a different container
-        self._reader.update_all()
-
-        return response.new_account_id
-
-    def withdraw(self, from_account: UUID, amount: Money) -> None:
-        command = Withdraw(account_id=from_account, amount=amount)
-        self._app.handle(command)
-
-        # Simulating event store reader in a different container
-        self._reader.update_all()
-
-    def check_balance(self, for_account: UUID) -> Money:
-        account_read_model: AccountDTO = self._balance_view.for_account(for_account)
-        return account_read_model.balance
-
-
-class PrivateBankingDSL:
-    def __init__(self, driver: Driver) -> None:
-        self._account_id: UUID
-        self._driver = driver
-
-    def have(self, amount: str, currency: str) -> None:
-        money = Money(amount, currency)
-        self._account_id = self._driver.create_account(initial_deposit=money)
-
-    def withdraw_money(self, amount: str, currency: str) -> None:
-        money = Money(amount, currency)
-        self._driver.withdraw(from_account=self._account_id, amount=money)
-
-    def assert_have(self, amount: str, currency: str) -> None:
-        balance: Money = self._driver.check_balance(self._account_id)
-        assert balance == Money(amount, currency)
-
-
-@pytest.fixture
-def private_banking() -> PrivateBankingDSL:
-    return PrivateBankingDSL(driver=Driver())
 
 
 def test_withdraw_money(private_banking: PrivateBankingDSL):
