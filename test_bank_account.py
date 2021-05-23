@@ -200,6 +200,35 @@ def test_event_reader_remembers_last_update_position():
     assert collector.handled_events == deque((event_1, event_2))
 
 
+def test_event_reader_remembers_last_update_position_with_multiple_handers():
+    event_1 = AccountCreated(producer_id=uuid4(), deposit=Money("100", "PLN"))
+    event_2 = MoneyWithdrawn(producer_id=event_1.producer_id, amount=Money("10", "PLN"))
+
+    event_store: EventStore = EventStore()
+    event_store.store(event_1.producer_id, [event_1])
+
+    class EventCollector:
+        def __init__(self) -> None:
+            self.handled_events: Deque[Event] = deque()
+
+        def handle(self, event: Event) -> None:
+            self.handled_events.append(event)
+
+    collector_1 = EventCollector()
+    collector_2 = EventCollector()
+
+    reader: Reader = Reader(event_store)
+    reader.register(cast(ReadModel, collector_1), AccountCreated, MoneyWithdrawn)
+    reader.register(cast(ReadModel, collector_2), AccountCreated, MoneyWithdrawn)
+
+    reader.update_all()
+    event_store.store(event_2.producer_id, [event_2])
+    reader.update_all()
+
+    assert collector_1.handled_events == deque((event_1, event_2))
+    assert collector_2.handled_events == deque((event_1, event_2))
+
+
 class Driver:
     def __init__(self) -> None:
         event_store = EventStore()

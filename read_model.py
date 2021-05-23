@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from functools import singledispatchmethod, partialmethod
-from typing import Dict, Type, List
+from typing import Dict, Type, List, Iterable
 from uuid import UUID
 
 import attr
@@ -49,12 +49,24 @@ class Reader:
         self._handlers: Dict[Type[Event], List[ReadModel]] = defaultdict(list)
         self._event_store: EventStore = event_store
 
+    def _new_events(self) -> Iterable[Event]:
+        return self._event_store.all_streams(start_at=self._last_position)
+
+    def _mark_handled(self) -> None:
+        self._last_position += 1
+
+    def _handlers_for(self, event: Event) -> Iterable[ReadModel]:
+        return self._handlers[type(event)]
+
+    def _handle_event(self, event: Event) -> None:
+        for handler in self._handlers_for(event):
+            handler.handle(event)
+
     def register(self, read_model: ReadModel, *events: Type[Event]) -> None:
         for e in events:
             self._handlers[e].append(read_model)
 
     def update_all(self) -> None:
-        for event in self._event_store.all_streams(start_at=self._last_position):
-            for handler in self._handlers[type(event)]:
-                handler.handle(event)
-                self._last_position += 1
+        for event in self._new_events():
+            self._handle_event(event)
+            self._mark_handled()
