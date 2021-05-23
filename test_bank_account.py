@@ -171,21 +171,31 @@ def test_event_handler_builds_read_models_from_event_store(account: Account):
 
 class Driver:
     def __init__(self) -> None:
-        self._app = AccountApp(Repository[Account](Account, EventStore()))
+        event_store = EventStore()
+        self._app = AccountApp(Repository[Account](Account, event_store))
+
+        self._balance_view: BalanceView = BalanceView()
+        self._reader = Reader(event_store=event_store)
+        self._reader.register(self._balance_view, AccountCreated)
 
     def create_account(self, initial_deposit: Money) -> UUID:
         command = CreateAccount(with_deposit=initial_deposit)
         response: CreateAccountResponse = cast(
             CreateAccountResponse, self._app.handle(command)
         )
+
+        # Simulating event store reader in a different container
+        self._reader.update_all()
+
         return response.new_account_id
 
     def withdraw(self, from_account: UUID, amount: Money) -> None:
         command = Withdraw(account_id=from_account, amount=amount)
         self._app.handle(command)
 
-    def check_balance(self) -> Money:
-        return Money(0, "PLN")
+    def check_balance(self, for_account: UUID) -> Money:
+        account_read_model: AccountDTO = self._balance_view.for_account(for_account)
+        return account_read_model.balance
 
 
 class PrivateBankingDSL:
@@ -202,7 +212,7 @@ class PrivateBankingDSL:
         self._driver.withdraw(from_account=self._account_id, amount=money)
 
     def assert_have(self, amount: str, currency: str) -> None:
-        balance: Money = self._driver.check_balance()
+        balance: Money = self._driver.check_balance(self._account_id)
         assert balance == Money(amount, currency)
 
 
