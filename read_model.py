@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from functools import singledispatchmethod
+from functools import singledispatchmethod, partialmethod
 from typing import Dict, Type, List
 from uuid import UUID
 
@@ -49,8 +49,9 @@ class Reader:
         self._handlers: Dict[Type[Event], List[ReadModel]] = defaultdict(list)
         self._event_store: EventStore = event_store
 
-    def register(self, read_model: ReadModel, event: Type[Event]) -> None:
-        self._handlers[event].append(read_model)
+    def register(self, read_model: ReadModel, *events: Type[Event]) -> None:
+        for e in events:
+            self._handlers[e].append(read_model)
 
     def update_all(self) -> None:
         for event in self._event_store.all_streams(start_at=self._last_position):

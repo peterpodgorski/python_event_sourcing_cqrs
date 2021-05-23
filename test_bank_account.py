@@ -189,8 +189,7 @@ def test_event_reader_remembers_last_update_position():
     collector = EventCollector()
 
     reader: Reader = Reader(event_store)
-    reader.register(cast(ReadModel, collector), AccountCreated)
-    reader.register(cast(ReadModel, collector), MoneyWithdrawn)
+    reader.register(cast(ReadModel, collector), AccountCreated, MoneyWithdrawn)
 
     reader.update_all()
 
@@ -209,8 +208,7 @@ class Driver:
         self._balance_view: BalanceView = BalanceView()
 
         self._reader = Reader(event_store=event_store)
-        self._reader.register(self._balance_view, AccountCreated)
-        self._reader.register(self._balance_view, MoneyWithdrawn)
+        self._reader.register(self._balance_view, AccountCreated, MoneyWithdrawn)
 
     def create_account(self, initial_deposit: Money) -> UUID:
         command = CreateAccount(with_deposit=initial_deposit)
