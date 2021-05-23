@@ -75,6 +75,7 @@ class AccountApp:
     @handle.register
     def _(self, command: Withdraw) -> WithdrawResponse:
         account: Account = self._account_repo.get(command.account_id)
+        account.withdraw(command.amount)
         self._account_repo.save(account)
         return WithdrawResponse()
 
@@ -206,8 +207,10 @@ class Driver:
         self._app = AccountApp(Repository[Account](Account, event_store))
 
         self._balance_view: BalanceView = BalanceView()
+
         self._reader = Reader(event_store=event_store)
         self._reader.register(self._balance_view, AccountCreated)
+        self._reader.register(self._balance_view, MoneyWithdrawn)
 
     def create_account(self, initial_deposit: Money) -> UUID:
         command = CreateAccount(with_deposit=initial_deposit)
@@ -222,11 +225,10 @@ class Driver:
 
     def withdraw(self, from_account: UUID, amount: Money) -> None:
         command = Withdraw(account_id=from_account, amount=amount)
+        self._app.handle(command)
 
         # Simulating event store reader in a different container
         self._reader.update_all()
-
-        self._app.handle(command)
 
     def check_balance(self, for_account: UUID) -> Money:
         account_read_model: AccountDTO = self._balance_view.for_account(for_account)

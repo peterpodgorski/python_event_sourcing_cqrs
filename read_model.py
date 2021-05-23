@@ -7,7 +7,7 @@ from uuid import UUID
 import attr
 from money import Money
 
-from domain import AccountCreated, Event
+from domain import AccountCreated, Event, MoneyWithdrawn
 from persistance import EventStore
 
 
@@ -34,6 +34,10 @@ class BalanceView(ReadModel):
     @handle.register
     def _(self, event: AccountCreated) -> None:
         self._storage[event.producer_id] = event.deposit
+
+    @handle.register
+    def _(self, event: MoneyWithdrawn) -> None:
+        self._storage[event.producer_id] -= event.amount
 
     def for_account(self, account_id: UUID) -> AccountDTO:
         return AccountDTO(account_id=account_id, balance=self._storage[account_id])
